@@ -36,18 +36,18 @@ summary{cursor:pointer}
 <button id="go">Načíst zápasy</button>
 <div id="st"></div>
 </div>
-<div id="list"></div>
-<p class="note">Jen výsledek zápasu (1X2), singly, kurz 1,80 až 3,50, hrana alespoň 4 %. Férový kurz = kurzy Pinnacle bez marže. Sázka je čtvrtina Kellyho, nejvýše 2 % banky. Odhad, ne záruka.</p>
+<label style="margin:8px 0"><input type="checkbox" id="all" style="margin-right:6px">Ukázat i zápasy mimo pásmo 40–58 %</label><div id="list"></div>
+<p class="note">Jen výsledek zápasu (1X2), singly, kurz 1,80 až 3,50, šance výsledku alespoň 40 %, hrana alespoň 4 %. Férová šance je průměr z Pinnacle a Betfair Exchange (když je k dispozici). Zápasy mimo pásmo 40–58 % jsou skryté. Férový kurz = kurzy Pinnacle bez marže. Sázka je čtvrtina Kellyho, nejvýše 2 % banky. Odhad, ne záruka.</p>
 </main>
 <script>
-const $=s=>document.querySelector(s),MINK=1.8,MAXK=3.5,EDGE=.04,API="https://api.the-odds-api.com/v4";
+const $=s=>document.querySelector(s),MINK=1.8,MAXK=3.5,EDGE=.04,MINP=.4,API="https://api.the-odds-api.com/v4";
 const LG=[["soccer_uefa_champs_league","Liga mistrů"],["soccer_uefa_europa_league","Evropská liga"],["soccer_uefa_europa_conference_league","Konferenční liga"],["soccer_epl","Premier League"],["soccer_spain_la_liga","La Liga"],["soccer_italy_serie_a","Serie A"],["soccer_germany_bundesliga","Bundesliga"],["soccer_france_ligue_one","Ligue 1"],["soccer_netherlands_eredivisie","Eredivisie"],["soccer_portugal_primeira_liga","Primeira Liga"],["soccer_efl_champ","Championship"],["soccer_germany_bundesliga2","2. Bundesliga"],["czech","Chance Liga"]];
 const ls={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 const num=v=>{const x=parseFloat(String(v).replace(",","."));return isFinite(x)?x:NaN};
 const f=(x,d=2)=>isFinite(x)?x.toFixed(d).replace(".",","):"–";
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let events=[];
-$("#key").value=ls.get("key")||"";$("#bank").value=ls.get("bank")||"";
+let events=[];const fair=o=>{const s=o.reduce((a,x)=>a+1/x,0);return o.map(x=>1/x/s)};
+$("#all").onchange=()=>draw();$("#key").value=ls.get("key")||"";$("#bank").value=ls.get("bank")||"";
 const sel=JSON.parse(ls.get("sel")||"null")||LG.map(l=>l[0]);
 $("#lg").innerHTML=LG.map(l=>`<label><input type="checkbox" value="${l[0]}" ${sel.includes(l[0])?"checked":""}> ${l[1]}</label>`).join("");
 $("#bank").oninput=()=>{ls.set("bank",$("#bank").value);document.querySelectorAll("details[open]").forEach(d=>d.dispatchEvent(new Event("calc")))};
@@ -63,18 +63,16 @@ $("#go").onclick=async()=>{
     const keys=[];const missing=[];
     chosen.forEach(c=>{const s=c==="czech"?act.find(a=>a.group==="Soccer"&&/czech/i.test(a.key+a.title)):act.find(a=>a.key===c);
       if(s)keys.push([s.key,s.title]);else missing.push(LG.find(l=>l[0]===c)[1])});
-    const out=[];let left="?";const lim=Date.now()+3*864e5;
+    const out=[];let left="?";const lim=Date.now()+7*864e5;
     for(const [k,t] of keys){
       st.textContent="Načítám: "+t;
-      const rr=await fetch(`${API}/sports/${k}/odds/?apiKey=${encodeURIComponent(key)}&regions=eu&markets=h2h&bookmakers=pinnacle&oddsFormat=decimal`);
+      const rr=await fetch(`${API}/sports/${k}/odds/?apiKey=${encodeURIComponent(key)}&regions=eu&markets=h2h&bookmakers=pinnacle,betfair_ex_eu&oddsFormat=decimal`);
       left=rr.headers.get("x-requests-remaining")||left;
       if(!rr.ok)continue;
       (await rr.json()).forEach(e=>{
-        const m=e.bookmakers?.[0]?.markets?.find(x=>x.key==="h2h");if(!m)return;
-        const g=n=>m.outcomes.find(o=>o.name===n)?.price;
-        const o=[g(e.home_team),g("Draw"),g(e.away_team)];
-        if(o.some(x=>!(x>1))||new Date(e.commence_time)>lim||new Date(e.commence_time)<Date.now())return;
-        out.push({id:e.id,lg:t,h:e.home_team,a:e.away_team,t:e.commence_time,o});
+        const od=k=>{const m=e.bookmakers?.find(b=>b.key===k)?.markets?.find(x=>x.key==="h2h");if(!m)return null;const g=n=>m.outcomes.find(o=>o.name===n)?.price;const r=[g(e.home_team),g("Draw"),g(e.away_team)];return r.some(x=>!(x>1))?null:r},o=od("pinnacle"),b=od("betfair_ex_eu");if(!o)return;
+        if(new Date(e.commence_time)>lim||new Date(e.commence_time)<Date.now())return;
+        out.push({id:e.id,lg:t,h:e.home_team,a:e.away_team,t:e.commence_time,o,b});
       });
     }
     out.sort((a,b)=>new Date(a.t)-new Date(b.t));events=out;
@@ -86,22 +84,25 @@ $("#go").onclick=async()=>{
 };
 function draw(){
   const L=$("#list");L.innerHTML="";
-  if(!events.length){L.innerHTML='<p class="sub">Žádné zápasy v příštích 3 dnech.</p>';return}
-  events.forEach(e=>{
+  if(!events.length){L.innerHTML='<p class="sub">Žádné zápasy v příštích 7 dnech.</p>';return}
+  const P=e=>{const a=fair(e.o);if(!e.b)return{p:a,dis:false,two:false};const c=fair(e.b);return{p:a.map((x,i)=>(x+c[i])/2),dis:a.some((x,i)=>Math.abs(x-c[i])>.03),two:true}};
+  const shown=events.filter(e=>$("#all").checked||P(e).p.some(x=>x>=MINP&&x<=.58));
+  if(!shown.length){L.innerHTML='<p class="sub">Žádný zápas v pásmu 40–58 %. Zaškrtni „Ukázat i zápasy mimo pásmo“.</p>';return}
+  shown.forEach(e=>{
     const d=document.createElement("details"),dt=new Date(e.t).toLocaleString("cs",{weekday:"short",day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"});
     const nm=[e.h,"Remíza",e.a];
-    d.innerHTML=`<summary><b>${esc(e.h)} – ${esc(e.a)}</b><div class="sub">${esc(e.lg)} · ${dt} · Pinnacle ${e.o.map(x=>f(x)).join(" / ")}</div></summary>
+    d.innerHTML=`<summary><b>${esc(e.h)} – ${esc(e.a)}</b><div class="sub">${esc(e.lg)} · ${dt} · Pinnacle ${e.o.map(x=>f(x)).join(" / ")}${e.b?" · Betfair "+e.b.map(x=>f(x)).join(" / "):" · bez Betfairu"}</div></summary>
     <div class="note">Tvůj kurz z Tipsportu (vyplň, co chceš posoudit):</div>
     <div class="g3">${nm.map((n,i)=>`<label>${esc(i===1?"Remíza":i?"Hosté":"Domácí")}<input type="text" inputmode="decimal" data-i="${i}"></label>`).join("")}</div><div class="res">Zadej kurz.</div>`;
     const calc=()=>{
-      const s=e.o.reduce((a,x)=>a+1/x,0),bank=num($("#bank").value),R=d.querySelector(".res");let lines=[],best=null;
+      const PP=P(e),s=e.o.reduce((a,x)=>a+1/x,0),bank=num($("#bank").value),R=d.querySelector(".res");let lines=[],best=null;
       d.querySelectorAll("input").forEach(inp=>{
         const i=+inp.dataset.i,t=num(inp.value);if(!(t>1))return;
-        const p=(1/e.o[i])/s,edge=t*p-1,out=t<MINK||t>MAXK,k=Math.max(0,edge/(t-1)),st=Math.min(k*.25,.02);
-        let tag;if(out)tag="mimo limit kurzu";else if(edge>=EDGE){tag="VALUE";if(!best||edge>best.edge)best={edge,st}}else tag=edge>=0?"na hraně":"bez hrany";
-        lines.push(`${esc(nm[i])} ${f(t)}: férový ${f(1/p)}, hrana ${f(edge*100,1)} % → <b>${tag}</b>`+(tag==="VALUE"?`, sázka ${f(st*100,2)} % banky`+(bank>0?` (${Math.round(bank*st)} Kč)`:""):""));
+        const p=PP.p[i],edge=t*p-1,out=t<MINK||t>MAXK,k=Math.max(0,edge/(t-1)),st=Math.min(k*.25,.02);
+        let tag;if(out)tag="mimo limit kurzu";else if(PP.dis)tag="zdroje se neshodují, nesázet";else if(p<MINP)tag="outsider, pod 40 % šance";else if(edge>=EDGE){tag="VALUE";if(!best||edge>best.edge)best={edge,st}}else tag=edge>=0?"na hraně":"bez hrany";
+        lines.push(`${esc(nm[i])} ${f(t)}: férový ${f(1/p)}, hrana ${f(edge*100,1)} % → <b>${tag}</b>`+(tag==="VALUE"?`, vsaď jen při kurzu alespoň ${f((1+EDGE)/p)}, sázka ${f(st*100,2)} % banky`+(bank>0?` (${Math.round(bank*st)} Kč)`:""):""));
       });
-      R.className="res "+(best?"ok":lines.length?"no":"");R.innerHTML=lines.length?lines.join("<br>")+`<br><span class="note">Marže Pinnacle ${f((s-1)*100,1)} %</span>`:"Zadej kurz.";
+      R.className="res "+(best?"ok":lines.length?"no":"");R.innerHTML=lines.length?lines.join("<br>")+`<br><span class="note">Marže Pinnacle ${f((s-1)*100,1)} %${PP.two?(PP.dis?" · Betfair se rozchází":" · Betfair souhlasí"):""}</span>`:"Zadej kurz.";
     };
     d.addEventListener("input",calc);d.addEventListener("calc",calc);L.append(d);
   });
