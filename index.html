@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Value tipy</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#14181f;--mut:#667085;--bd:#dfe3ea;--ac:#0b7a4b;--ok:#0b7a4b;--wa:#a86500;--no:#b42318;--okb:#e3f5ec;--wab:#fdf0d9;--nob:#fde7e5}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0f1318;--card:#181e26;--tx:#e8ecf1;--mut:#97a1b0;--bd:#2a3340;--ac:#3ec58a;--ok:#4ad394;--wa:#f0b24a;--no:#ff8a80;--okb:#12301f;--wab:#33270e;--nob:#3a1816}}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0}h2{font-size:15px;margin:18px 0 6px;color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:12px;margin:10px 0}
+label{display:block;font-size:13px;color:var(--mut)}
+input[type=text],input[type=password]{width:100%;box-sizing:border-box;font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:10px;margin-top:4px}
+button{font:inherit;font-weight:600;background:var(--ac);color:#fff;border:0;border-radius:10px;padding:12px;width:100%;margin-top:8px}
+button:disabled{opacity:.5}
+.sub,.note{font-size:13px;color:var(--mut)}
+.lg{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:14px;margin-top:8px}
+.lg label{color:var(--tx);font-size:14px}
+details{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:10px 12px;margin:8px 0}
+summary{cursor:pointer}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.res{margin-top:8px;padding:8px 10px;border-radius:10px;font-size:14px;background:var(--bg)}
+.ok{background:var(--okb);color:var(--ok)}.wa{background:var(--wab);color:var(--wa)}.no{background:var(--nob);color:var(--no)}
+#st{color:var(--mut);font-size:13px;margin-top:6px}
+</style>
+</head>
+<body><main>
+<h1>Value tipy</h1>
+<p class="sub">Zápasy s kurzy Pinnacle. Ty doplníš kurz z Tipsportu, stránka spočítá hranu.</p>
+<div class="card">
+<label>Klíč The Odds API<input id="key" type="password" autocomplete="off"></label>
+<label style="margin-top:8px">Banka v Kč (nepovinné)<input id="bank" type="text" inputmode="decimal"></label>
+<div class="lg" id="lg"></div>
+<button id="go">Načíst zápasy</button>
+<div id="st"></div>
+</div>
+<div id="list"></div>
+<p class="note">Jen výsledek zápasu (1X2), singly, kurz 1,80 až 3,50, hrana alespoň 4 %. Férový kurz = kurzy Pinnacle bez marže. Sázka je čtvrtina Kellyho, nejvýše 2 % banky. Odhad, ne záruka.</p>
+</main>
+<script>
+const $=s=>document.querySelector(s),MINK=1.8,MAXK=3.5,EDGE=.04,API="https://api.the-odds-api.com/v4";
+const LG=[["soccer_uefa_champs_league","Liga mistrů"],["soccer_uefa_europa_league","Evropská liga"],["soccer_uefa_europa_conference_league","Konferenční liga"],["soccer_epl","Premier League"],["soccer_spain_la_liga","La Liga"],["soccer_italy_serie_a","Serie A"],["soccer_germany_bundesliga","Bundesliga"],["soccer_france_ligue_one","Ligue 1"],["soccer_netherlands_eredivisie","Eredivisie"],["soccer_portugal_primeira_liga","Primeira Liga"],["soccer_efl_champ","Championship"],["soccer_germany_bundesliga2","2. Bundesliga"],["czech","Chance Liga"]];
+const ls={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const num=v=>{const x=parseFloat(String(v).replace(",","."));return isFinite(x)?x:NaN};
+const f=(x,d=2)=>isFinite(x)?x.toFixed(d).replace(".",","):"–";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let events=[];
+$("#key").value=ls.get("key")||"";$("#bank").value=ls.get("bank")||"";
+const sel=JSON.parse(ls.get("sel")||"null")||LG.map(l=>l[0]);
+$("#lg").innerHTML=LG.map(l=>`<label><input type="checkbox" value="${l[0]}" ${sel.includes(l[0])?"checked":""}> ${l[1]}</label>`).join("");
+$("#bank").oninput=()=>{ls.set("bank",$("#bank").value);document.querySelectorAll("details[open]").forEach(d=>d.dispatchEvent(new Event("calc")))};
+try{const c=JSON.parse(ls.get("cache")||"null");if(c){events=c.ev;$("#st").textContent="Uloženo z "+new Date(c.t).toLocaleString("cs");draw()}}catch(e){}
+$("#go").onclick=async()=>{
+  const key=$("#key").value.trim(),st=$("#st"),chosen=[...document.querySelectorAll("#lg input:checked")].map(i=>i.value);
+  if(!key){st.textContent="Vlož klíč.";return}
+  ls.set("key",key);ls.set("sel",JSON.stringify(chosen));$("#go").disabled=true;st.textContent="Načítám…";
+  try{
+    const r=await fetch(`${API}/sports/?apiKey=${encodeURIComponent(key)}`);
+    if(!r.ok)throw new Error(r.status===401?"Klíč není platný.":"Chyba "+r.status);
+    const act=(await r.json()).filter(s=>s.active);
+    const keys=[];const missing=[];
+    chosen.forEach(c=>{const s=c==="czech"?act.find(a=>a.group==="Soccer"&&/czech/i.test(a.key+a.title)):act.find(a=>a.key===c);
+      if(s)keys.push([s.key,s.title]);else missing.push(LG.find(l=>l[0]===c)[1])});
+    const out=[];let left="?";const lim=Date.now()+3*864e5;
+    for(const [k,t] of keys){
+      st.textContent="Načítám: "+t;
+      const rr=await fetch(`${API}/sports/${k}/odds/?apiKey=${encodeURIComponent(key)}&regions=eu&markets=h2h&bookmakers=pinnacle&oddsFormat=decimal`);
+      left=rr.headers.get("x-requests-remaining")||left;
+      if(!rr.ok)continue;
+      (await rr.json()).forEach(e=>{
+        const m=e.bookmakers?.[0]?.markets?.find(x=>x.key==="h2h");if(!m)return;
+        const g=n=>m.outcomes.find(o=>o.name===n)?.price;
+        const o=[g(e.home_team),g("Draw"),g(e.away_team)];
+        if(o.some(x=>!(x>1))||new Date(e.commence_time)>lim||new Date(e.commence_time)<Date.now())return;
+        out.push({id:e.id,lg:t,h:e.home_team,a:e.away_team,t:e.commence_time,o});
+      });
+    }
+    out.sort((a,b)=>new Date(a.t)-new Date(b.t));events=out;
+    ls.set("cache",JSON.stringify({t:Date.now(),ev:out}));
+    st.textContent="Hotovo, zápasů: "+out.length+". Zbývá požadavků: "+left+(missing.length?". Nedostupné: "+missing.join(", "):"");
+    draw();
+  }catch(e){st.textContent=e.message||"Načtení se nepovedlo. Zkontroluj internet a klíč."}
+  finally{$("#go").disabled=false}
+};
+function draw(){
+  const L=$("#list");L.innerHTML="";
+  if(!events.length){L.innerHTML='<p class="sub">Žádné zápasy v příštích 3 dnech.</p>';return}
+  events.forEach(e=>{
+    const d=document.createElement("details"),dt=new Date(e.t).toLocaleString("cs",{weekday:"short",day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"});
+    const nm=[e.h,"Remíza",e.a];
+    d.innerHTML=`<summary><b>${esc(e.h)} – ${esc(e.a)}</b><div class="sub">${esc(e.lg)} · ${dt} · Pinnacle ${e.o.map(x=>f(x)).join(" / ")}</div></summary>
+    <div class="note">Tvůj kurz z Tipsportu (vyplň, co chceš posoudit):</div>
+    <div class="g3">${nm.map((n,i)=>`<label>${esc(i===1?"Remíza":i?"Hosté":"Domácí")}<input type="text" inputmode="decimal" data-i="${i}"></label>`).join("")}</div><div class="res">Zadej kurz.</div>`;
+    const calc=()=>{
+      const s=e.o.reduce((a,x)=>a+1/x,0),bank=num($("#bank").value),R=d.querySelector(".res");let lines=[],best=null;
+      d.querySelectorAll("input").forEach(inp=>{
+        const i=+inp.dataset.i,t=num(inp.value);if(!(t>1))return;
+        const p=(1/e.o[i])/s,edge=t*p-1,out=t<MINK||t>MAXK,k=Math.max(0,edge/(t-1)),st=Math.min(k*.25,.02);
+        let tag;if(out)tag="mimo limit kurzu";else if(edge>=EDGE){tag="VALUE";if(!best||edge>best.edge)best={edge,st}}else tag=edge>=0?"na hraně":"bez hrany";
+        lines.push(`${esc(nm[i])} ${f(t)}: férový ${f(1/p)}, hrana ${f(edge*100,1)} % → <b>${tag}</b>`+(tag==="VALUE"?`, sázka ${f(st*100,2)} % banky`+(bank>0?` (${Math.round(bank*st)} Kč)`:""):""));
+      });
+      R.className="res "+(best?"ok":lines.length?"no":"");R.innerHTML=lines.length?lines.join("<br>")+`<br><span class="note">Marže Pinnacle ${f((s-1)*100,1)} %</span>`:"Zadej kurz.";
+    };
+    d.addEventListener("input",calc);d.addEventListener("calc",calc);L.append(d);
+  });
+}
+</script>
+</body>
+</html>
