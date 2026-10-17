@@ -36,8 +36,8 @@ summary{cursor:pointer}
 <button id="go">Načíst zápasy</button>
 <div id="st"></div>
 </div>
-<label style="margin:8px 0"><input type="checkbox" id="all" style="margin-right:6px">Ukázat i zápasy mimo pásmo 40–58 %</label><div id="list"></div>
-<p class="note">Jen výsledek zápasu (1X2), singly, kurz 1,80 až 3,50, šance výsledku alespoň 40 %, hrana alespoň 4 %. Férová šance je průměr z Pinnacle a Betfair Exchange (když je k dispozici). Zápasy mimo pásmo 40–58 % jsou skryté. Férový kurz = kurzy Pinnacle bez marže. Sázka je čtvrtina Kellyho, nejvýše 2 % banky. Odhad, ne záruka.</p>
+<label style="margin:8px 0"><input type="checkbox" id="all" style="margin-right:6px">Ukázat i zápasy mimo pásmo (férový kurz 1,80 až 2,50)</label><div id="list"></div>
+<p class="note">Jen výsledek zápasu (1X2), singly, kurz 1,80 až 3,50, šance výsledku alespoň 40 %, hrana alespoň 4 %. Férová šance je průměr z Pinnacle a Betfair Exchange (když je k dispozici). Skryté jsou zápasy, kde žádný výsledek nemá férový kurz zhruba 1,80 až 2,50. Férový kurz = kurzy Pinnacle bez marže. Sázka je čtvrtina Kellyho, nejvýše 2 % banky. Odhad, ne záruka.</p>
 </main>
 <script>
 const $=s=>document.querySelector(s),MINK=1.8,MAXK=3.5,EDGE=.04,MINP=.4,API="https://api.the-odds-api.com/v4";
@@ -86,8 +86,8 @@ function draw(){
   const L=$("#list");L.innerHTML="";
   if(!events.length){L.innerHTML='<p class="sub">Žádné zápasy v příštích 7 dnech.</p>';return}
   const P=e=>{const a=fair(e.o);if(!e.b)return{p:a,dis:false,two:false};const c=fair(e.b);return{p:a.map((x,i)=>(x+c[i])/2),dis:a.some((x,i)=>Math.abs(x-c[i])>.03),two:true}};
-  const shown=events.filter(e=>$("#all").checked||P(e).p.some(x=>x>=MINP&&x<=.58));
-  if(!shown.length){L.innerHTML='<p class="sub">Žádný zápas v pásmu 40–58 %. Zaškrtni „Ukázat i zápasy mimo pásmo“.</p>';return}
+  const shown=events.filter(e=>$("#all").checked||P(e).p.some(x=>x>=MINP&&x<=1/MINK));
+  if(!shown.length){L.innerHTML='<p class="sub">Žádný zápas s férovým kurzem 1,80 až 2,50. Zaškrtni „Ukázat i zápasy mimo pásmo“.</p>';return}
   shown.forEach(e=>{
     const d=document.createElement("details"),dt=new Date(e.t).toLocaleString("cs",{weekday:"short",day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"});
     const nm=[e.h,"Remíza",e.a];
