@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tipy – automat</title>
+<style>
+:root{--bg:#eef1f4;--card:#fff;--ink:#14202b;--mute:#5d6b78;--line:#d5dce3;--ok:#0e7a4b;--okbg:#e2f4ea;--no:#b3261e;--nobg:#fbe7e5}
+@media (prefers-color-scheme:dark){:root{--bg:#10171d;--card:#18222a;--ink:#e8eef3;--mute:#98a6b3;--line:#2b3946;--ok:#4cc38a;--okbg:#14301f;--no:#ff8a80;--nobg:#3a1c19}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:560px;margin:0 auto;padding:16px 14px 40px}
+h1{font-size:22px;margin:4px 0 2px}
+.meta{color:var(--mute);font-size:14px;margin-bottom:14px}
+.warn{background:var(--nobg);color:var(--no);padding:8px 10px;border-radius:8px;margin-bottom:12px;font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.lg{color:var(--mute);font-size:13px}
+.teams{font-weight:600;margin:2px 0}
+.pick{margin:6px 0 2px}
+.need{font-size:30px;font-weight:700;line-height:1.1}
+.need small{font-size:14px;font-weight:400;color:var(--mute)}
+.row{display:flex;gap:10px;align-items:center;margin-top:10px}
+input{width:110px;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+input:focus-visible{outline:2px solid var(--ok);outline-offset:1px}
+.res{font-weight:600;padding:6px 10px;border-radius:8px;flex:1;text-align:center}
+.res.ok{background:var(--okbg);color:var(--ok)}
+.res.no{background:var(--nobg);color:var(--no)}
+.res:empty{display:none}
+.empty{padding:24px 4px;color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+<h1>Tipy – automat</h1>
+<div class="meta" id="meta">Načítám…</div>
+<div id="warn"></div>
+<div id="list"></div>
+</main>
+<script>
+const f2=n=>n.toFixed(2).replace('.',',');
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const store={get(k){try{return localStorage.getItem(k)||''}catch(e){return ''}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+let picks=[];
+
+function check(id,val){
+  const p=picks.find(x=>x.id===id), el=document.querySelector('[data-res="'+CSS.escape(id)+'"]');
+  const o=parseFloat(String(val).replace(',','.'));
+  if(!o){el.className='res';el.textContent='';return}
+  const edge=o*p.p-1;
+  if(o>=p.need){el.className='res ok';el.textContent='Beru · hrana +'+(edge*100).toFixed(1).replace('.',',')+' %'}
+  else{el.className='res no';el.textContent='Nebrat · hrana '+(edge*100).toFixed(1).replace('.',',')+' %'}
+}
+
+function render(d){
+  picks=d.picks;
+  const gen=new Date(d.generated), age=(Date.now()-gen)/36e5;
+  const q=d.quota&&d.quota['x-requests-remaining'];
+  document.getElementById('meta').textContent='Skenováno '+gen.toLocaleString('cs-CZ',{day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'})+(q?' · zbývá '+q+' kreditů':'');
+  if(age>30)document.getElementById('warn').innerHTML='<div class="warn">Data jsou stará '+Math.round(age)+' h. Zkontroluj běh skenování na GitHubu (Actions).</div>';
+  const list=document.getElementById('list');
+  if(!picks.length){list.innerHTML='<div class="empty">Teď nic neprochází filtry. To je v pořádku, nevynucuj si tip.</div>';return}
+  list.innerHTML=picks.map(p=>{
+    const t=new Date(p.kickoff).toLocaleString('cs-CZ',{weekday:'short',day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'});
+    return '<div class="card"><div class="lg">'+esc(p.league)+' · '+t+'</div>'+
+    '<div class="teams">'+esc(p.home)+' – '+esc(p.away)+'</div>'+
+    '<div class="pick">'+esc(p.pick)+'</div>'+
+    '<div class="need">od '+f2(p.need)+' <small>pravděpodobnost '+Math.round(p.p*100)+' % · férový kurz '+f2(p.fair)+' · zdroje '+p.sources+'</small></div>'+
+    '<div class="row"><input inputmode="decimal" placeholder="kurz Tipsport" data-id="'+esc(p.id)+'" value="'+esc(store.get('o:'+p.id))+'"><div class="res" data-res="'+esc(p.id)+'"></div></div></div>';
+  }).join('');
+  list.querySelectorAll('input').forEach(i=>{
+    check(i.dataset.id,i.value);
+    i.addEventListener('input',()=>{store.set('o:'+i.dataset.id,i.value);check(i.dataset.id,i.value)});
+  });
+}
+
+fetch('data.json?'+Date.now()).then(r=>{if(!r.ok)throw 0;return r.json()}).then(render)
+ .catch(()=>{document.getElementById('meta').textContent='';document.getElementById('list').innerHTML='<div class="empty">data.json zatím neexistuje. Spusť skenování v záložce Actions (Run workflow).</div>'});
+</script>
+</body>
+</html>
